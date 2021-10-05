@@ -4,7 +4,7 @@ use tracing::debug;
 use url::Url;
 
 #[derive(StructOpt)]
-#[structopt(name = "camera", about = "ONVIF camera control tool")]
+#[structopt(name = "provisioning", about = "ONVIF camera provisioning tool")]
 struct Args {
     #[structopt(global = true, long, requires = "password")]
     username: Option<String>,
@@ -27,38 +27,10 @@ struct Args {
 #[structopt()]
 enum Cmd {
     GetSystemDateAndTime,
-
-    GetCapabilities,
-
-    /// Gets the capabilities of all known ONVIF services supported by this device.
-    GetServiceCapabilities,
-
-    /// Gets RTSP URIs for all profiles, along with a summary of the video/audio streams.
-    GetStreamUris,
-
-    GetHostname,
-
-    // Gets model, firmware, manufacturer and others informations related to the device.
-    GetDeviceInformation,
-
-    SetHostname {
-        hostname: String,
-    },
-
-    // Gets the PTZ status for the primary media profile.
-    GetStatus,
-
-    /// Attempts to enable a `vnd.onvif.metadata` RTSP stream with analytics.
-    EnableAnalytics,
-
-    /// Gets information about the currently enabled and supported video analytics.
-    GetAnalytics,
-
-    // Try to get any possible information
-    GetAll,
 }
 
 struct Clients {
+    provisioning: soap::client::Client,
     devicemgmt: soap::client::Client,
     event: Option<soap::client::Client>,
     deviceio: Option<soap::client::Client>,
@@ -85,6 +57,9 @@ impl Clients {
             .ok_or_else(|| "--uri must be specified.".to_string())?;
         let devicemgmt_uri = base_uri.join("onvif/device_service").unwrap();
         let mut out = Self {
+            provisioning: soap::client::ClientBuilder::new(&devicemgmt_uri)
+                .credentials(creds.clone())
+                .build(),
             devicemgmt: soap::client::ClientBuilder::new(&devicemgmt_uri)
                 .credentials(creds.clone())
                 .build(),
@@ -97,7 +72,7 @@ impl Clients {
             analytics: None,
         };
         let services =
-            schema::devicemgmt::get_services(&out.devicemgmt, &Default::default()).await?;
+            schema::provisioning::get_service_capabilities(&out.devicemgmt, &Default::default()).await?;
         for s in &services.service {
             let url = Url::parse(&s.x_addr).map_err(|e| e.to_string())?;
             if !url.as_str().starts_with(base_uri.as_str()) {
@@ -112,7 +87,7 @@ impl Clients {
                     .build(),
             );
             match s.namespace.as_str() {
-                "http://www.onvif.org/ver10/device/wsdl" => {
+                "http://www.onvif.org/ver10/provisioning/wsdl" => {
                     // if s.x_addr != devicemgmt_uri.as_str() {
                     //     return Err(format!(
                     //         "advertised device mgmt uri {} not expected {}",
@@ -151,9 +126,9 @@ async fn get_device_information(clients: &Clients) {
 }
 
 async fn get_service_capabilities(clients: &Clients) {
-    match schema::event::get_service_capabilities(&clients.devicemgmt, &Default::default()).await {
-        Ok(capability) => println!("devicemgmt: {:#?}", capability),
-        Err(error) => println!("Failed to fetch devicemgmt: {}", error.to_string()),
+    match schema::event::get_service_capabilities(&clients.provisioning, &Default::default()).await {
+        Ok(capability) => println!("provisioning: {:#?}", capability),
+        Err(error) => println!("Failed to fetch provisioning: {}", error.to_string()),
     }
 
     if let Some(ref event) = clients.event {
@@ -270,13 +245,23 @@ async fn get_hostname(clients: &Clients) {
     );
 }
 
-async fn set_hostname(clients: &Clients, hostname: String) {
-    schema::devicemgmt::set_hostname(
-        &clients.devicemgmt,
-        &schema::devicemgmt::SetHostname { name: hostname },
-    )
-    .await
-    .unwrap();
+async fn pan_move(clients: &Clients, hostname: String) {
+    let service_capabilities = schema::provisioning::get_service_capabilities(&clients.provisioning, &Default::default()).await;
+    let caps = service_capabilities.capabilities;
+    if caps.is_empty() {
+        println!("No service capabilities");
+        return;
+    } else {
+        let token = caps[0].source.video_source_token;
+        println!("token is {}", token);
+        schema::provisioning::pan_move(
+            &clients.provisioning,
+            &schema::provisioning::PanMove { video_source: schema::common::ReferenceToken(token), direction: schema::provisioning::PanDirection::Left, None},
+        )
+        .await
+        .unwrap();
+    }
+
 }
 
 async fn enable_analytics(clients: &Clients) {
@@ -414,6 +399,7 @@ async fn main() {
         Cmd::EnableAnalytics => enable_analytics(&clients).await,
         Cmd::GetAnalytics => get_analytics(&clients).await,
         Cmd::GetStatus => get_status(&clients).await,
+        Cmd::PanMove => pan_move(&clients).await,
         Cmd::GetAll => {
             get_system_date_and_time(&clients).await;
             get_capabilities(&clients).await;
@@ -422,6 +408,7 @@ async fn main() {
             get_hostname(&clients).await;
             get_analytics(&clients).await;
             get_status(&clients).await;
+            pan_move(&clients).await;
         }
     }
 }
