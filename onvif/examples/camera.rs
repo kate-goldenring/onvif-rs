@@ -29,6 +29,7 @@ enum Cmd {
     GetSystemDateAndTime,
 
     GetCapabilities,
+    GetNetworkInterfaces,
 
     /// Gets the capabilities of all known ONVIF services supported by this device.
     GetServiceCapabilities,
@@ -106,6 +107,7 @@ impl Clients {
                     &s.x_addr, &base_uri
                 ));
             }
+            println!("client url is {}", url);
             let svc = Some(
                 soap::client::ClientBuilder::new(&url)
                     .credentials(creds.clone())
@@ -141,6 +143,13 @@ async fn get_capabilities(clients: &Clients) {
     }
 }
 
+async fn get_network_interfaces(clients: &Clients) {
+    match schema::devicemgmt::get_network_interfaces(&clients.devicemgmt, &Default::default()).await {
+        Ok(capabilities) => println!("{:#?}", capabilities),
+        Err(error) => println!("Failed to fetch capabilities: {}", error.to_string()),
+    }
+}
+
 async fn get_device_information(clients: &Clients) {
     println!(
         "{:#?}",
@@ -151,7 +160,7 @@ async fn get_device_information(clients: &Clients) {
 }
 
 async fn get_service_capabilities(clients: &Clients) {
-    match schema::event::get_service_capabilities(&clients.devicemgmt, &Default::default()).await {
+    match schema::devicemgmt::get_service_capabilities(&clients.devicemgmt, &Default::default()).await {
         Ok(capability) => println!("devicemgmt: {:#?}", capability),
         Err(error) => println!("Failed to fetch devicemgmt: {}", error.to_string()),
     }
@@ -163,37 +172,37 @@ async fn get_service_capabilities(clients: &Clients) {
         }
     }
     if let Some(ref deviceio) = clients.deviceio {
-        match schema::event::get_service_capabilities(deviceio, &Default::default()).await {
+        match schema::deviceio::get_service_capabilities(deviceio, &Default::default()).await {
             Ok(capability) => println!("deviceio: {:#?}", capability),
             Err(error) => println!("Failed to fetch deviceio: {}", error.to_string()),
         }
     }
     if let Some(ref media) = clients.media {
-        match schema::event::get_service_capabilities(media, &Default::default()).await {
+        match schema::media::get_service_capabilities(media, &Default::default()).await {
             Ok(capability) => println!("media: {:#?}", capability),
             Err(error) => println!("Failed to fetch media: {}", error.to_string()),
         }
     }
     if let Some(ref media2) = clients.media2 {
-        match schema::event::get_service_capabilities(media2, &Default::default()).await {
+        match schema::media2::get_service_capabilities(media2, &Default::default()).await {
             Ok(capability) => println!("media2: {:#?}", capability),
             Err(error) => println!("Failed to fetch media2: {}", error.to_string()),
         }
     }
     if let Some(ref imaging) = clients.imaging {
-        match schema::event::get_service_capabilities(imaging, &Default::default()).await {
+        match schema::imaging::get_service_capabilities(imaging, &Default::default()).await {
             Ok(capability) => println!("imaging: {:#?}", capability),
             Err(error) => println!("Failed to fetch imaging: {}", error.to_string()),
         }
     }
     if let Some(ref ptz) = clients.ptz {
-        match schema::event::get_service_capabilities(ptz, &Default::default()).await {
+        match schema::ptz::get_service_capabilities(ptz, &Default::default()).await {
             Ok(capability) => println!("ptz: {:#?}", capability),
             Err(error) => println!("Failed to fetch ptz: {}", error.to_string()),
         }
     }
     if let Some(ref analytics) = clients.analytics {
-        match schema::event::get_service_capabilities(analytics, &Default::default()).await {
+        match schema::analytics::get_service_capabilities(analytics, &Default::default()).await {
             Ok(capability) => println!("analytics: {:#?}", capability),
             Err(error) => println!("Failed to fetch analytics: {}", error.to_string()),
         }
@@ -406,6 +415,7 @@ async fn main() {
     match args.cmd {
         Cmd::GetSystemDateAndTime => get_system_date_and_time(&clients).await,
         Cmd::GetCapabilities => get_capabilities(&clients).await,
+        Cmd::GetNetworkInterfaces => get_network_interfaces(&clients).await,
         Cmd::GetServiceCapabilities => get_service_capabilities(&clients).await,
         Cmd::GetStreamUris => get_stream_uris(&clients).await,
         Cmd::GetHostname => get_hostname(&clients).await,
